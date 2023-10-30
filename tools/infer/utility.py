@@ -147,6 +147,16 @@ def init_args():
 
     parser.add_argument("--show_log", type=str2bool, default=True)
     parser.add_argument("--use_onnx", type=str2bool, default=False)
+
+
+    parser.add_argument("--use_triton", type=str2bool, default=False)
+    # parser.add_argument("--use_onnx", type=str2bool, default=False)
+    # parser.add_argument("--use_onnx", type=str2bool, default=False)
+    # parser.add_argument("--use_onnx", type=str2bool, default=False)
+    # parser.add_argument("--use_onnx", type=str2bool, default=False)
+    # parser.add_argument("--use_onnx", type=str2bool, default=False)
+    # parser.add_argument("--use_onnx", type=str2bool, default=False)
+
     return parser
 
 
@@ -175,10 +185,22 @@ def create_predictor(args, mode, logger):
     else:
         model_dir = args.e2e_model_dir
 
-    if model_dir is None:
+    if model_dir is None and not args.use_triton:
         logger.info("not find {} model file path {}".format(mode, model_dir))
         sys.exit(0)
-    if args.use_onnx:
+
+    if args.use_triton:
+        import tritonclient.http as httpclient
+        triton_client = httpclient.InferenceServerClient(url=args.url_backend)
+        # inputs = []
+        # inputs.append(httpclient.InferInput(args.input_tensor_name, args.input_tensor_size, args.input_tensor_type))
+        # outputs = []
+        # outputs.append(httpclient.InferRequestedOutput(args.output_tensor_name, binary_data=True))
+        # config = {'model_name':args.model_name}
+        # return triton_client, inputs, outputs, config
+        return triton_client, None, None, None,
+
+    elif args.use_onnx:
         import onnxruntime as ort
         model_file_path = model_dir
         if not os.path.exists(model_file_path):

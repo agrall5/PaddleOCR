@@ -111,6 +111,11 @@ class TextClassifier(object):
                 self.predictor.run()
                 prob_out = self.output_tensors[0].copy_to_cpu()
                 self.predictor.try_shrink_memory()
+                
+            print('CLS')
+            import pdb 
+            pdb.set_trace()
+
             cls_result = self.postprocess_op(prob_out)
             elapse += time.time() - starttime
             for rno in range(len(cls_result)):

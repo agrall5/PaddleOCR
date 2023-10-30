@@ -1,0 +1,1 @@
+python3.8 tools/infer/predict_system.py --use_gpu=False --use_triton=True

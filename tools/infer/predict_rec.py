@@ -625,6 +625,11 @@ class TextRecognizer(object):
                     else:
                         preds = outputs[0]
                     self.predictor.try_shrink_memory()
+                    
+            print('REC')    
+            import pdb 
+            pdb.set_trace() 
+            
             rec_result = self.postprocess_op(preds)
             for rno in range(len(rec_result)):
                 rec_res[indices[beg_img_no + rno]] = rec_result[rno]

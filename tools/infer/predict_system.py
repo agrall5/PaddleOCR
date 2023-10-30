@@ -255,7 +255,12 @@ def main(args):
 
 
 if __name__ == "__main__":
+
     args = utility.parse_args()
+
+    args.image_dir='/home/agrall/Projets/regate/PaddleOCR/doc/imgs_en/img_12.jpg' 
+    args.rec_char_dict_path='/home/agrall/Projets/regate/PaddleOCR/ppocr/utils/en_dict.txt'
+
     if args.use_mp:
         p_list = []
         total_process_num = args.total_process_num

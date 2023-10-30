@@ -24,7 +24,7 @@ import cv2
 import numpy as np
 import time
 import sys
-
+import tritonclient.http as httpclient
 import tools.infer.utility as utility
 from ppocr.utils.logging import get_logger
 from ppocr.utils.utility import get_image_file_list, check_and_read
@@ -39,6 +39,7 @@ class TextDetector(object):
         self.args = args
         self.det_algorithm = args.det_algorithm
         self.use_onnx = args.use_onnx
+        self.use_triton = args.use_triton
         pre_process_list = [{
             'DetResizeForTest': {
                 'limit_side_len': args.det_limit_side_len,
@@ -138,6 +139,17 @@ class TextDetector(object):
 
         self.preprocess_op = create_operators(pre_process_list)
         self.postprocess_op = build_post_process(postprocess_params)
+
+        # TO DO : clean / change / add as arg
+        if self.use_triton:
+            args.use_triton = True
+            args.url_backend = 'banner:28000'
+            args.input_tensor_name = "x"
+            args.input_tensor_size = [-1,3,-1,-1]
+            args.input_tensor_type = "FP32"
+            args.output_tensor_name = "sigmoid_0.tmp_0"
+            args.model_name = "paddle_det"
+
         self.predictor, self.input_tensor, self.output_tensors, self.config = utility.create_predictor(
             args, 'det', logger)
 
@@ -236,10 +248,42 @@ class TextDetector(object):
 
         if self.args.benchmark:
             self.autolog.times.stamp()
-        if self.use_onnx:
+
+        if self.use_triton:
+            # img.shape = (1, 3, 608, 960)
+            inputs_triton = httpclient.InferInput("x", img.shape, "FP32")
+            inputs_triton.set_data_from_numpy(img, binary_data=False)
+
+            # # binary output 
+            # outputs_triton_bin = httpclient.InferRequestedOutput("sigmoid_0.tmp_0", binary_data=True)
+            # request_ocr_bin = self.predictor.infer(model_name="paddle_det",inputs=[inputs_triton], outputs = [outputs_triton_bin])
+            # response_bin = request_ocr_bin.get_response()
+            # ## {'model_name': 'paddle_det', 'model_version': '1', 'outputs': [{'name': 'sigmoid_0.tmp_0', 'datatype': 'FP32', 'shape': [1, 1, 608, 960], 'parameters': {'binary_data_size': 2334720}}]}
+
+            # non binary output 
+            outputs_triton = httpclient.InferRequestedOutput("sigmoid_0.tmp_0", binary_data=False)
+            request_ocr = self.predictor.infer(model_name="paddle_det",inputs=[inputs_triton], outputs = [outputs_triton])
+            response = request_ocr.get_response()
+
+            output_data = np.reshape(response['outputs'][0]['data'], response['outputs'][0]['shape'])
+
+            if response['outputs'][0]['datatype'] == 'FP32' :
+                output_data = output_data.astype(np.float32)
+
+            outputs = [output_data]
+
+
+        elif self.use_onnx:
             input_dict = {}
             input_dict[self.input_tensor.name] = img
+
             outputs = self.predictor.run(self.output_tensors, input_dict)
+
+            ## get same result
+            # label_name = self.predictor.get_outputs()[0].name
+            # outputs = self.predictor.run([label_name], input_dict)
+
+
         else:
             self.input_tensor.copy_from_cpu(img)
             self.predictor.run()
@@ -249,6 +293,72 @@ class TextDetector(object):
                 outputs.append(output)
             if self.args.benchmark:
                 self.autolog.times.stamp()
+                
+
+
+        ###################################################################
+        # pip install 'tritonclient[all]'
+        #########################################
+        # (Pdb) self.predictor
+        # <onnxruntime.capi.onnxruntime_inference_collection.InferenceSession object at 0x7f42cbf4a730>
+
+        # sess = ort.InferenceSession(model_file_path)
+        # return sess, sess.get_inputs()[0], None, None
+
+        # self.predictor.get_outputs()[0].name
+        # 'sigmoid_0.tmp_0'
+
+        # self.predictor, self.input_tensor, self.output_tensors, self.config = utility.create_predictor(
+        #     args, 'det', logger)
+
+
+        # (Pdb) input_dict
+        # {'x': array([[[[ 0.12543888,  0.09118938,  0.14256364, ...,  0.02269037,
+        #         0.02269037, -0.02868389],
+        #         [ 0.12543888,  0.12543888,  0.07406463, ...,  0.02269037,
+        #         0.02269037,  0.02269037],
+        #         [ 0.10831413,  0.12543888,  0.15968838, ...,  0.02269037,
+        #         0.02269037,  0.02269037],
+        #         ...,
+        #         [ 1.7162532 ,  1.7162532 ,  1.6813947 , ...,  0.77507645,
+        #         0.77507645,  0.7576472 ],
+        #         [ 1.7336823 ,  1.7162532 ,  1.7162532 , ...,  0.6007845 ,
+        #         0.6007845 ,  0.6356429 ],
+        #         [ 1.7162532 ,  1.7162532 ,  1.7162532 , ...,  0.3916342 ,
+        #         0.3916342 ,  0.3916342 ]]]], dtype=float32)}
+
+        # (Pdb) input_dict['x'].shape
+        # (1, 3, 608, 960)
+
+        # (Pdb) outputs
+        # [array([[[[0., 0., 0., ..., 0., 0., 0.],
+        #         [0., 0., 0., ..., 0., 0., 0.],
+        #         [0., 0., 0., ..., 0., 0., 0.],
+        #         ...,
+        #         [0., 0., 0., ..., 0., 0., 0.],
+        #         [0., 0., 0., ..., 0., 0., 0.],
+        #         [0., 0., 0., ..., 0., 0., 0.]]]], dtype=float32)]
+        # (Pdb) outputs[0].shape
+        # (1, 1, 608, 960)
+
+        # dims on backend :
+        # input [
+        # {
+        #     name: "x"
+        #     data_type: TYPE_FP32
+        #     dims: [-1,3,-1,-1] 
+        #     # -1 means dynamic axis, aka this dimension may change 
+        # }
+        # ]
+
+        # output [
+        # {
+        #     name: "sigmoid_0.tmp_0"
+        #     data_type: TYPE_FP32
+        #     dims: [-1,1,-1,-1]
+        # }
+        # ]
+
 
         preds = {}
         if self.det_algorithm == "EAST":
@@ -281,6 +391,22 @@ class TextDetector(object):
         if self.args.benchmark:
             self.autolog.times.end(stamp=True)
         et = time.time()
+
+        # dt_boxes
+        #    [[ 403.,  346.],
+        #     [1204.,  348.],
+        #     [1204.,  384.],
+        #     [ 402.,  383.]],
+
+        #    [[ 441.,  174.],
+        #     [1166.,  176.],
+        #     [1165.,  222.],
+        #     [ 441.,  221.]]], dtype=float32)
+
+
+        # dt_boxes.shape
+        # (11, 4, 2)
+
         return dt_boxes, et - st
 
 
